@@ -1,39 +1,63 @@
-export default function handler(req, res) {
-  const VERIFY_TOKEN = "mibot123"; // Cambialo por tu token seguro
+import express from "express";
+import bodyParser from "body-parser";
+import axios from "axios";
 
-  if (req.method === "GET") {
-    // 🔹 Verificación del webhook
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
+const app = express();
+app.use(bodyParser.json());
 
-    if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("✅ Webhook verificado correctamente");
-      res.status(200).send(challenge);
-    } else {
-      res.status(403).send("Forbidden");
-    }
-  } else if (req.method === "POST") {
-    // 🔹 Recepción de mensajes
-    console.log("📩 Mensaje recibido:", req.body);
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID; // el del sandbox
 
-    if (
-      req.body.entry &&
-      req.body.entry[0].changes &&
-      req.body.entry[0].changes[0].value.messages &&
-      req.body.entry[0].changes[0].value.messages[0]
-    ) {
-      const message = req.body.entry[0].changes[0].value.messages[0];
-      const from = message.from; 
-      const text = message.text?.body || "";
+// 1️⃣ Verificación inicial de Webhook
+app.get("/api/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-      console.log(`💬 ${from} dice: ${text}`);
-
-      // Aquí podrías llamar a tu lógica de IA o respuestas automáticas
-    }
-
-    res.status(200).send("EVENT_RECEIVED");
+  if (mode && token === VERIFY_TOKEN) {
+    console.log("Webhook verificado ✅");
+    res.status(200).send(challenge);
   } else {
-    res.status(404).send("Not Found");
+    res.sendStatus(403);
   }
-}
+});
+
+// 2️⃣ Recepción de mensajes
+app.post("/api/webhook", async (req, res) => {
+  const entry = req.body.entry?.[0];
+  const changes = entry?.changes?.[0];
+  const message = changes?.value?.messages?.[0];
+
+  if (message && message.text) {
+    const from = message.from; // número del cliente
+    const body = message.text.body.toLowerCase();
+
+    console.log("Mensaje recibido:", body);
+
+    let reply = "¡Hola! 👋 Soy el asistente de MCV Propiedades.";
+    if (body.includes("propiedad") || body.includes("alquiler")) {
+      reply = "Tenemos varias propiedades disponibles 🏡. ¿En qué zona te interesa buscar?";
+    }
+
+    // Enviar respuesta
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: from,
+        text: { body: reply },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
+  res.sendStatus(200);
+});
+
+export default app;
