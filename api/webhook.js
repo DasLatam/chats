@@ -1,65 +1,72 @@
-console.log("Body completo recibido:", JSON.stringify(req.body, null, 2));
-
 import express from "express";
-import bodyParser from "body-parser";
-import axios from "axios";
+import fetch from "node-fetch";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID; // el del sandbox
+const VERIFY_TOKEN = "whatsapp_bot_test"; // el mismo que usaste para verificar el webhook
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN; // tu token de Meta
 
-// 1️⃣ Verificación inicial de Webhook
+// 🔹 Endpoint para verificación inicial del Webhook
 app.get("/api/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode && token === VERIFY_TOKEN) {
-    console.log("Webhook verificado ✅");
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verificado correctamente");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// 2️⃣ Recepción de mensajes
+// 🔹 Endpoint que recibe los mensajes de WhatsApp
 app.post("/api/webhook", async (req, res) => {
-  const entry = req.body.entry?.[0];
-  const changes = entry?.changes?.[0];
-  const message = changes?.value?.messages?.[0];
+  try {
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const message = value?.messages?.[0];
 
-  if (message && message.text) {
-    const from = message.from; // número del cliente
-    const body = message.text.body.toLowerCase();
+    if (message && message.text?.body) {
+      const from = message.from;
+      const text = message.text.body.toLowerCase();
 
-    console.log("Mensaje recibido:", body);
+      console.log("📩 Mensaje recibido:", text);
 
-    let reply = "¡Hola! 👋 Soy el asistente de MCV Propiedades.";
-    if (body.includes("propiedad") || body.includes("alquiler")) {
-      reply = "Tenemos varias propiedades disponibles 🏡. ¿En qué zona te interesa buscar?";
+      // Respuesta base
+      let reply = "👋 Hola! Soy tu asistente automatizado de prueba.";
+
+      if (text.includes("propiedad")) {
+        reply = "🏠 Contanos más sobre la propiedad que querés alquilar o vender.";
+      } else if (text.includes("hola")) {
+        reply = "🙌 Hola! ¿Cómo estás? Puedo ayudarte con propiedades, alquileres o consultas.";
+      }
+
+      // Enviar la respuesta usando la API de WhatsApp
+      await fetch(
+        `https://graph.facebook.com/v22.0/${value.metadata.phone_number_id}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: from,
+            text: { body: reply },
+          }),
+        }
+      );
     }
 
-    // Enviar respuesta
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: from,
-        text: { body: reply },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("❌ Error procesando el webhook:", error);
+    res.sendStatus(500);
   }
-
-  res.sendStatus(200);
 });
 
 export default app;
