@@ -1,3 +1,5 @@
+console.log("Body completo recibido:", JSON.stringify(req.body, null, 2));
+
 import express from "express";
 import bodyParser from "body-parser";
 import axios from "axios";
